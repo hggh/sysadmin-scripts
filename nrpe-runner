@@ -7,12 +7,14 @@ checks  = {}
 options = {
   'basedir' => '/etc/nrpe.d',
   'conf_ext' => '.cfg',
+  'nrpecfg' => '/etc/nagios/nrpe.cfg'
 }
 
 OptionParser.new do |opts|
   opts.on("-a", "--all")                   { |v| options['all'] = v }
   opts.on("-c", "--command COMMAND")       { |command|  options['command'] = command }
   opts.on("-d", "--directory")             { |v| options['basedir'] = v }
+  opts.on("-e", "--nrpecfg")               { |v| options['nrpecfg'] = v }
   opts.on("-j", "--json")                  { |v| options['json'] = v }
   opts.on("-n", "--name NAME")             { |name| options['name'] = name }
   opts.on("-o", "--output-file FILENAME")  { |filename| options['output'] = filename }
@@ -22,6 +24,32 @@ end.parse!
 
 # build up the list of checks. Checks that appear more than once
 # overwrite the older instance
+def parse_file(filename)
+  checks = Hash.new
+  if File.exists?(filename)
+    File.open(filename, 'r').each_line do |line|
+      line.chomp!
+      if line.match(/^include_dir=(.+)/)
+        nrpedir = $1
+        if File.directory?(nrpedir)
+          Dir["#{nrpedir}/*"].each do |file|
+            checks.merge!(parse_file(file))
+          end
+        end
+      elsif line.match(/^include=(.+)/)
+        checks.merge!(parse_file($1))
+      elsif line.match(/^command\[(.+)\]=(.+)/)
+        name, command = $1, $2
+        checks[name] = command
+      end
+    end
+  end
+  checks
+end
+
+if File.exists?(options['nrpecfg'])
+  checks.merge!(parse_file(options['nrpecfg']))
+end
 
 Dir["#{options['basedir']}/*#{options['conf_ext']}"].each do |file|
   File.open( file, 'r' ).each_line do |line|
